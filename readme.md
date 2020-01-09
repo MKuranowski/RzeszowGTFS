@@ -6,7 +6,7 @@ Data comes from ZTM Rzeszów's [ownCloud storage](https://chmura.ztm.rzeszow.pl/
 
 ## Running
 
-Python3](https://www.python.org) (version 3.6 or later) is required with 2 additional libraries:
+[Python3](https://www.python.org) (version 3.6 or later) is required with 2 additional libraries:
 - [lxml](https://pypi.org/project/lxml/) and
 - [requests](https://pypi.org/project/requests/)
 
