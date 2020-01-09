@@ -1,0 +1,8 @@
+feeds/
+gtfs/
+tmp/
+*.sh
+*.bat
+*.xml
+*.zip
+*.html
