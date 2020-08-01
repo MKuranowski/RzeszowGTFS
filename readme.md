@@ -2,7 +2,16 @@
 
 ## Description
 Creates GTFS file for [ZTM Rzeszów](https://ztm.rzeszow.pl/).
-Data comes from ZTM Rzeszów's [ownCloud storage](https://chmura.ztm.rzeszow.pl/index.php/s/UY5an6Qk8CZHmCf), which contains zip archives with TranchXChange files.
+Data comes from ZTM Rzeszów's [ownCloud storage](https://chmura.ztm.rzeszow.pl/index.php/s/UY5an6Qk8CZHmCf)
+which contains zip archives with TranchXChange files.
+
+Those TransXChange files are considered "public sector information" by Polish law,
+and are subject to laws described in [ustawa o ponownym wykorzystywaniu informacji sektora publicznego](https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20160000352).
+
+Gmina Miasto Rzeszów (*owner* of ZTM Rzeszów) has expressed their requirements (in accordance with article 11 of the aformentioned legislation) on this website:
+<https://bip.erzeszow.pl/pl/319-informacja-publiczna-ponowne-wykorzystywanie-informacji-sektora-publicznego/4570-zasady-dostepu-do-informacji-publicznej.html>.
+
+I assume that exposing info from `attributions.txt` satisfies first point of those requirements.
 
 ## Running
 

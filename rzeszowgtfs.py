@@ -69,6 +69,10 @@ WEBDAV_AUTH = ("UY5an6Qk8CZHmCf", "null")
 # HELPER FUNCTIONS
 
 
+def _escape_csv(value):
+    return '"' + value.replace('"', '""') + '"'
+
+
 def _clear_dir(dir):
     "Removes every file from `dir`, or creates `dir` if it doesn't exist"
     if not os.path.exists(dir):
@@ -173,6 +177,8 @@ class RzeszowGtfs:
         """
         self.xml_parser = None
         self.file_url = file_url
+
+        self.download_time = None
         self.version = feed_version
 
         self.route_ids = {}
@@ -189,6 +195,8 @@ class RzeszowGtfs:
         print("\033[1A\033[K" f"Requesting {self.file_url!r}")
         req = requests.get(self.file_url, auth=WEBDAV_AUTH, stream=True)
         req.raise_for_status()
+
+        self.download_time = datetime.today()
 
         with TemporaryFile() as temp_zip_buff:
             # Download zip to tempfile
@@ -222,17 +230,42 @@ class RzeszowGtfs:
                                           events={"start", "end"})
 
     @staticmethod
-    def static_files(version):
+    def static_files(pub_name, pub_url, version, download_time):
         "Create GTFS files that don't change: feed_info.txt and agency.txt"
+        # agency.txt
         file = open("gtfs/agency.txt", "w", encoding="utf-8", newline="\r\n")
         file.write("agency_id,agency_name,agency_url,agency_timezone,agency_lang\n")
         file.write('0,ZTM Rzeszów,"http://ztm.rzeszow.pl",Europe/Warsaw,pl\n')
         file.close()
 
-        file = open("gtfs/feed_info.txt", "w", encoding="utf-8", newline="\r\n")
-        file.write("feed_publisher_name,feed_publisher_url,feed_lang,feed_version\n")
-        file.write(f'Mikołaj Kuranowski,"https://mkuran.pl",pl,{version}\n')
+        # attributions.txt
+        producer_attr = f"{pub_name} (using RzeszowGTFS script)" if (pub_name and pub_url) \
+                        else "GTFS created using RzeszowGTFS"
+        producer_attr_url = pub_url or "https://github.com/MKuranowski/RzeszowGTFS/"
+        dload_timestring = download_time.strftime("%Y-%-m%d %H:%M:%S")
+
+        file = open("gtfs/attributions.txt", mode="w", encoding="utf-8", newline="\r\n")
+        file.write("attribution_id,organization_name,is_producer,is_operator,is_authority,"
+                   "is_data_source,attribution_url\n")
+
+        file.write(",".join([
+            "0", _escape_csv(producer_attr), "1", "0", "0", "0", _escape_csv(producer_attr_url)
+        ]) + "\n")
+
+        file.write(f'1,"ZTM Rzeszów (based on on liked TransXChange files, retrieved '
+                   f'{dload_timestring})",0,1,1,1,'
+                   '"https://chmura.ztm.rzeszow.pl/index.php/s/UY5an6Qk8CZHmCf"')
+
         file.close()
+
+        # feed_info.txt
+        if pub_name and pub_url:
+            file = open("gtfs/feed_info.txt", "w", encoding="utf-8", newline="\r\n")
+            file.write("feed_publisher_name,feed_publisher_url,feed_lang,feed_version\n")
+            file.write(",".join([
+                _escape_csv(pub_name), _escape_csv(pub_url), "pl", version
+            ]) + "\n")
+            file.close()
 
     def service_to_daytypes(self):
         """
@@ -583,7 +616,7 @@ class RzeszowGtfs:
         archive.close()
 
     @classmethod
-    def parse(cls, file_name, target="rzeszow.zip"):
+    def parse(cls, file_name, target="rzeszow.zip", pub_name="", pub_url=""):
         """
         Automatically creates a GTFS file
 
@@ -594,7 +627,7 @@ class RzeszowGtfs:
         _clear_dir("gtfs")
 
         file_url = "https://chmura.ztm.rzeszow.pl/public.php/webdav/" + file_name
-        file_version = datetime.strptime(file_name, "%d.%m.%Y.Rzeszow.zip") \
+        file_version = datetime.strptime(file_name[:10], "%d.%m.%Y") \
                                .strftime("%Y-%m-%d")
 
         local_parse_queue = PARSE_QUEUE.copy()
@@ -638,7 +671,7 @@ class RzeszowGtfs:
                 raise RuntimeError(f"Unable to handle XML section {look_for_tag!r}")
 
         print("\033[1A\033[K" "Creating agency & feed_info files")
-        self.static_files(self.version)
+        self.static_files(pub_name, pub_url, self.version, self.download_time)
 
         print("\033[1A\033[K" f"Compressing into {target}")
         self.compress(target)
@@ -650,7 +683,9 @@ class MultiRzeszow:
         self.today = date.today()
         self.changed = False
         self.files_xml = []
+
         self.version = ""
+        self.download_time = None
 
         self.routes = None
         self.stops = None
@@ -683,7 +718,7 @@ class MultiRzeszow:
 
             # File name and link
             file_name = _txt(resp.find(".//d:href", XML_NS)).split("/")[-1]
-            file_version = datetime.strptime(file_name, "%d.%m.%Y.Rzeszow.zip") \
+            file_version = datetime.strptime(file_name[:10], "%d.%m.%Y") \
                                    .strftime("%Y-%m-%d")
 
             # File mod time
@@ -746,6 +781,7 @@ class MultiRzeszow:
         recreate_files = {i["ver"]: i for i in self.files_xml}
 
         self.version = "/".join([i["ver"] for i in self.files_xml])
+        self.download_time = datetime.today()
 
         for file in os.scandir("feeds"):
             # Only GTFS files, so those matching YYYY-MM-DD.zip
@@ -1041,7 +1077,7 @@ class MultiRzeszow:
             self.arch.close()
 
     @classmethod
-    def create(cls, target="rzeszow.zip", remerge=False, reparse=False):
+    def create(cls, target="rzeszow.zip", remerge=False, reparse=False, pub_name="", pub_url=""):
         """
         Automatically creates a GTFS for Rzeszów from all current and future
         files avaiable at ZTM Rzeszów's WebDAV.
@@ -1074,7 +1110,7 @@ class MultiRzeszow:
             self.create_stops()
 
             print("\033[1A\033[K" "Creating static files")
-            RzeszowGtfs.static_files(self.version)
+            RzeszowGtfs.static_files(pub_name, pub_url, self.version, self.download_time)
 
             print("\033[1A\033[K" + "Compressing")
             RzeszowGtfs.compress(target)
@@ -1113,6 +1149,22 @@ if __name__ == "__main__":
         help="force re-creation of individual GTFS files (only valid with --merge)"
     )
 
+    argprs.add_argument(
+        "-pn", "--publisher-name",
+        required=False,
+        metavar="NAME",
+        help="value of feed_publisher_name (--publisher-url is also required to create feed_info)",
+        default="",
+    )
+
+    argprs.add_argument(
+        "-pu", "--publisher-url",
+        required=False,
+        metavar="URL",
+        help="value of feed_publisher_url (--publisher-name is also required to create feed_info)",
+        default="",
+    )
+
     args = argprs.parse_args()
 
     if args.merge and args.single_file:
@@ -1120,10 +1172,12 @@ if __name__ == "__main__":
 
     elif args.single_file:
         print()
-        RzeszowGtfs.parse(args.single_file)
+        RzeszowGtfs.parse(args.single_file, pub_name=args.publisher_name,
+                          pub_url=args.publisher_url)
 
     elif args.merge:
-        MultiRzeszow.create(remerge=args.remerge, reparse=args.reparse)
+        MultiRzeszow.create(remerge=args.remerge, reparse=args.reparse,
+                            pub_name=args.publisher_name, pub_url=args.publisher_url)
 
     else:
         argprs.error("nothing to do! provide --merge or --single-file")
