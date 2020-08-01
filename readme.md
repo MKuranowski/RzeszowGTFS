@@ -38,4 +38,4 @@ The name of the zip file from [ZTM's cloud](https://chmura.ztm.rzeszow.pl/index.
 
 ## License
 
-*TristarGTFS* is provided under the MIT license, included in the `license.md` file.
+*RzeszowGTFS* is provided under the MIT license, included in the `license.md` file.
