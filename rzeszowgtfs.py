@@ -239,21 +239,13 @@ class RzeszowGtfs:
         file.close()
 
         # attributions.txt
-        producer_attr = f"{pub_name} (using RzeszowGTFS script)" if (pub_name and pub_url) \
-                        else "GTFS created using RzeszowGTFS"
-        producer_attr_url = pub_url or "https://github.com/MKuranowski/RzeszowGTFS/"
-        dload_timestring = download_time.strftime("%Y-%-m%d %H:%M:%S")
+        dload_timestring = download_time.strftime("%Y-%m-%d %H:%M:%S")
 
         file = open("gtfs/attributions.txt", mode="w", encoding="utf-8", newline="\r\n")
-        file.write("attribution_id,organization_name,is_producer,is_operator,is_authority,"
+        file.write("organization_name,is_producer,is_operator,is_authority,"
                    "is_data_source,attribution_url\n")
 
-        file.write(",".join([
-            "0", _escape_csv(producer_attr), "1", "0", "0", "0", _escape_csv(producer_attr_url)
-        ]) + "\n")
-
-        file.write(f'1,"ZTM Rzeszów (based on on liked TransXChange files, retrieved '
-                   f'{dload_timestring})",0,1,1,1,'
+        file.write(f'"Data provided by: ZTM Rzeszów (retrieved {dload_timestring})",0,1,1,1,'
                    '"https://chmura.ztm.rzeszow.pl/index.php/s/UY5an6Qk8CZHmCf"')
 
         file.close()
