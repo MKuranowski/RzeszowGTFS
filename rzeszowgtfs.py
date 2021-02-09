@@ -730,7 +730,7 @@ class MultiRzeszow:
 
     def list_xml_files(self):
         "Lists all files available at ZTM Rzeszów WebDAV"
-        req = requests.get(URL_LIST_ALL)
+        req = requests.get(URL_LIST_ALL, verify=False)
         req.raise_for_status()
         resources = req.json()["resources"]
 
