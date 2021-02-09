@@ -735,7 +735,7 @@ class MultiRzeszow:
         resources = req.json()["resources"]
 
         if not resources:
-            raise ValueError("empty repsonse for PROPFIND on Rzeszów WebDAV")
+            raise ValueError("No files attached to TransXChange dataset")
 
         for res in resources:
             # Check if this resource points to an XML file
