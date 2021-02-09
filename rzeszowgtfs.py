@@ -1,8 +1,10 @@
 from datetime import date, datetime, timedelta
+from urllib.parse import urljoin, urlparse
+from dataclasses import dataclass
+from contextlib import closing
 from warnings import warn
 from tempfile import TemporaryFile
 from lxml import etree
-import email.utils
 import argparse
 import requests
 import zipfile
@@ -63,8 +65,9 @@ FILES_TO_COPY = {
 
 XML_NS = {"d": "DAV:", "t": "http://www.transxchange.org.uk/"}
 
-WEBDAV_URL = "https://chmura.ztm.rzeszow.pl/public.php/webdav"
-WEBDAV_AUTH = ("UY5an6Qk8CZHmCf", "null")
+URL_LIST_ALL = "https://otwartedane.erzeszow.pl/v1/datasets/slug_full_view/?format=json&slug=rozklad-jazdy-transxchange"  # noqa
+URL_SINGLE_FILE = "https://otwartedane.erzeszow.pl/media/resources/"
+FILE_HOSTNAME = "otwartedane.erzeszow.pl"
 
 # HELPER FUNCTIONS
 
@@ -164,6 +167,15 @@ class _Time:
                              "{} (should be HH:MM or HH:MM:SS)".format(string))
 
 
+@dataclass
+class _XmlFile:
+    url: str
+    ver: str
+    mtime: datetime
+    start: date = date.min
+    end: date = date.max
+
+
 # DATA PARSING #
 
 
@@ -175,6 +187,7 @@ class RzeszowGtfs:
         :param str file_url: URL of the zip archive to be downloaded
         :param str feed_veriosn: The value for feed_version
         """
+        self.temp_file = TemporaryFile(mode="w+b", prefix="rzeszowgtfs_", suffix=".xml")
         self.xml_parser = None
         self.file_url = file_url
 
@@ -193,41 +206,17 @@ class RzeszowGtfs:
     def download(self):
         "Download the requested file and extract it"
         print("\033[1A\033[K" f"Requesting {self.file_url!r}")
-        req = requests.get(self.file_url, auth=WEBDAV_AUTH, stream=True)
+        req = requests.get(self.file_url, stream=True, verify=False)
         req.raise_for_status()
 
         self.download_time = datetime.today()
-
-        with TemporaryFile() as temp_zip_buff:
-            # Download zip to tempfile
-            print("\033[1A\033[K" f"Saving archive to TemporaryFile")
-
-            for chunk in req.iter_content(chunk_size=1024):
-                temp_zip_buff.write(chunk)
-
-            # Go to the front of zip
-            temp_zip_buff.seek(0)
-
-            # Unpack the TransXChange file
-            print("\033[1A\033[K" f"Exctracting file")
-
-            with zipfile.ZipFile(temp_zip_buff) as temp_zip:
-                files_inside = temp_zip.namelist()
-
-                if len(files_inside) != 1:
-                    raise ValueError(f"expected 1 file inside {self.file_url}!")
-
-                _clear_dir("tmp")
-                temp_zip.extract(files_inside[0], "tmp")
-                os.rename(os.path.join("tmp", files_inside[0]), "rzeszow.xml")
-                os.rmdir("tmp")
-
-        req.close()
+        for chunk in req.iter_content(chunk_size=1024*1024):
+            self.temp_file.write(chunk)
 
     def init_parser(self):
         "Initialize the parser"
-        self.xml_parser = etree.iterparse("rzeszow.xml",
-                                          events={"start", "end"})
+        self.temp_file.seek(0)
+        self.xml_parser = etree.iterparse(self.temp_file, events={"start", "end"})
 
     @staticmethod
     def static_files(pub_name, pub_url, version, download_time):
@@ -598,6 +587,10 @@ class RzeszowGtfs:
 
         file.close()
 
+    def close(self):
+        """Close the underlaying temporary file"""
+        self.temp_file.close()
+
     @staticmethod
     def compress(target="rzeszow.txt"):
         "Compress all created files to `target`"
@@ -608,59 +601,77 @@ class RzeszowGtfs:
         archive.close()
 
     @classmethod
-    def parse(cls, file_name, target="rzeszow.zip", pub_name="", pub_url=""):
-        """
-        Automatically creates a GTFS file
-
-        :param str file_name: File name to parse from ZTM Rzeszów WebDAV
-        :param str target: Target GTFS zip file name
-        """
+    def parse(cls, file_name="", file_url="", file_version="", target="rzeszow.zip",
+              pub_name="", pub_url=""):
+        """Automatically creates a GTFS file"""
         print("\033[1A\033[K" "Clearing the gtfs/ directory")
         _clear_dir("gtfs")
 
-        file_url = "https://chmura.ztm.rzeszow.pl/public.php/webdav/" + file_name
-        file_version = datetime.strptime(file_name[:10], "%d.%m.%Y") \
-                               .strftime("%Y-%m-%d")
+        # Normalize file_name
+        if file_name:
+            file_name = file_name.casefold()
+            if not file_name.endswith(".xml"):
+                file_name += ".xml"
 
+        # Ensure a valid version
+        if file_url and not file_version:
+            raise ValueError("RzeszowGTFS.parse requires file_version argument if using file_url")
+        elif file_name:
+            file_version = datetime.strptime(file_name, "transxchange%Y%m%d%H%M%S.xml") \
+                           .strftime("%Y-%m-%d %H:%M:%S")
+
+        # Ensure a valid file_url
+        if file_url:
+            # If url was provided, check the hostname
+            if urlparse(file_url).hostname != FILE_HOSTNAME:
+                raise ValueError(f"Rzeszow.parse can only parse files form {FILE_HOSTNAME!r}, "
+                                 f"but this url was provided: {file_url!r}")
+        elif file_name:
+            file_url = urljoin(URL_SINGLE_FILE, file_name.casefold())
+
+        else:
+            raise ValueError("RzeszowGTFS.parse expects either a file_name or file_url!")
+
+        # Parse the file
         local_parse_queue = PARSE_QUEUE.copy()
 
         print("\033[1A\033[K" "Downloading requested XML file")
-        self = cls(file_url, file_version)
-        self.download()
-        self.init_parser()
+        with closing(cls(file_url, file_version)) as self:
+            self.download()
+            self.init_parser()
 
-        while local_parse_queue:
+            while local_parse_queue:
 
-            look_for_tag = local_parse_queue.pop(0)
-            inside_services = False
+                look_for_tag = local_parse_queue.pop(0)
+                inside_services = False
 
-            event, elem = None, None
+                event, elem = None, None
 
-            while event != "start" or elem.tag != look_for_tag or inside_services:
+                while event != "start" or elem.tag != look_for_tag or inside_services:
 
-                try:
-                    event, elem = next(self.xml_parser)
+                    try:
+                        event, elem = next(self.xml_parser)
 
-                except StopIteration:
-                    self.init_parser()
-                    continue
+                    except StopIteration:
+                        self.init_parser()
+                        continue
 
-                # HOTFIX: <Services> tag contains <Lines> tags, which is different
-                #         then <Lines> tag containing route data
-                if not look_for_tag.endswith("Services"):
-                    if event == "start" and elem.tag.endswith("Services"):
-                        inside_services = True
+                    # HOTFIX: <Services> tag contains <Lines> tags, which is different
+                    #         then <Lines> tag containing route data
+                    if not look_for_tag.endswith("Services"):
+                        if event == "start" and elem.tag.endswith("Services"):
+                            inside_services = True
 
-                    elif event == "end" and elem.tag.endswith("Services"):
-                        inside_services = False
+                        elif event == "end" and elem.tag.endswith("Services"):
+                            inside_services = False
 
-            parse_function = PARSE_SWITCHCASE.get(look_for_tag)
+                parse_function = PARSE_SWITCHCASE.get(look_for_tag)
 
-            if parse_function:
-                getattr(self, parse_function)()
+                if parse_function:
+                    getattr(self, parse_function)()
 
-            else:
-                raise RuntimeError(f"Unable to handle XML section {look_for_tag!r}")
+                else:
+                    raise RuntimeError(f"Unable to handle XML section {look_for_tag!r}")
 
         print("\033[1A\033[K" "Creating agency & feed_info files")
         self.static_files(pub_name, pub_url, self.version, self.download_time)
@@ -674,7 +685,7 @@ class MultiRzeszow:
         "Initializes variables for multi-day parsing"
         self.today = date.today()
         self.changed = False
-        self.files_xml = []
+        self.files_xml: list[_XmlFile] = []
 
         self.version = ""
         self.download_time = None
@@ -691,45 +702,38 @@ class MultiRzeszow:
 
     def list_xml_files(self):
         "Lists all files available at ZTM Rzeszów WebDAV"
-        req = requests.request(method="PROPFIND", url=WEBDAV_URL, auth=WEBDAV_AUTH)
+        req = requests.get(URL_LIST_ALL)
         req.raise_for_status()
+        resources = req.json()["resources"]
 
-        dav = etree.fromstring(req.text)
-
-        responses = dav.findall("d:response", XML_NS)
-
-        if not responses:
+        if not resources:
             raise ValueError("empty repsonse for PROPFIND on Rzeszów WebDAV")
 
-        for resp in responses:
-            # Check if this response contains a zip file
-            content_type = resp.find(".//d:getcontenttype", XML_NS)
-
-            if content_type is None or content_type.text != "application/zip":
+        for res in resources:
+            # Check if this resource points to an XML file
+            if res.get("extension", "").casefold() != "xml":
                 continue
 
-            # File name and link
-            file_name = _txt(resp.find(".//d:href", XML_NS)).split("/")[-1]
-            file_version = datetime.strptime(file_name[:10], "%d.%m.%Y") \
-                                   .strftime("%Y-%m-%d")
+            # File version
+            version_match = re.match(r"(\d?\d)\.(\d?\d)\.(\d{4})", res["description"])
+            if not version_match:
+                raise ValueError("One of TeansXChange resources doesn't contain version in the "
+                                 f"description: {res['description']!r}")
+            file_version = version_match[3] \
+                + "-" + version_match[2].ljust(2, "0") \
+                + "-" + version_match[1].ljust(2, "0")
 
-            # File mod time
-            file_mtime = resp.find(".//d:getlastmodified", XML_NS)
-            if file_mtime is not None:
+            # File modification time
+            file_mtime = datetime.strptime(
+                res["name"].casefold(),
+                "TransXChange%Y%m%d%H%M%S"
+            )
 
-                file_mtime = email.utils.parsedate(_txt(file_mtime))
-                file_mtime = datetime(*file_mtime[:6])
-
-            else:
-                file_mtime = 0.0
-
-            self.files_xml.append({
-                "name": file_name,
-                "ver": file_version,
-                "mtime": file_mtime,
-                "start": None,
-                "end": None,
-            })
+            self.files_xml.append(_XmlFile(
+                url=resources["file"],
+                ver=file_version,
+                mtime=file_mtime,
+            ))
 
     def cleanup_xml_files(self):
         """
@@ -739,22 +743,21 @@ class MultiRzeszow:
         3. Assigns each file the start and end dates.
         """
         # Sort files
-        self.files_xml = sorted(self.files_xml, key=lambda i: i["ver"])
+        self.files_xml = sorted(self.files_xml, key=lambda i: i.ver)
 
         # Generate start and end dates
         for idx, xml_file in enumerate(self.files_xml):
-            file_date = datetime.strptime(xml_file["ver"],
-                                          "%Y-%m-%d").date()
+            file_date = datetime.strptime(xml_file.ver, "%Y-%m-%d").date()
 
-            self.files_xml[idx]["start"] = file_date
-            self.files_xml[idx]["end"] = file_date + timedelta(90)
+            xml_file.start = file_date
+            xml_file.end = file_date + timedelta(90)
 
             # Set the previous file's end date
             if idx > 0:
-                self.files_xml[idx - 1]["end"] = file_date - timedelta(1)
+                self.files_xml[idx - 1].end = file_date - timedelta(1)
 
         # Remove files only applicable in the future
-        self.files_xml = [i for i in self.files_xml if i["end"] >= self.today]
+        self.files_xml = [i for i in self.files_xml if i.end >= self.today]
 
     def sync_files(self, reparse=False):
         """
@@ -770,9 +773,9 @@ class MultiRzeszow:
         if reparse:
             _clear_dir("feeds")
 
-        recreate_files = {i["ver"]: i for i in self.files_xml}
+        recreate_files = {i.ver: i for i in self.files_xml}
 
-        self.version = "/".join([i["ver"] for i in self.files_xml])
+        self.version = "/".join([i.ver for i in self.files_xml])
         self.download_time = datetime.today()
 
         for file in os.scandir("feeds"):
@@ -789,7 +792,7 @@ class MultiRzeszow:
                 os.remove(file.path)
 
             # XML file was modified after creating the corresponding GTFS
-            elif recreate_files[file_version]["mtime"] > file_mtime:
+            elif recreate_files[file_version].mtime > file_mtime:
                 os.remove(file.path)
 
             else:
@@ -810,7 +813,7 @@ class MultiRzeszow:
                 print("\033[1A\033[K" "Calling RzeszowGtfs.parse()")
 
                 RzeszowGtfs.parse(
-                    file_name=file["name"],
+                    file_url=file.url,
                     target=os.path.join("feeds", version+".zip"),
                 )
 
@@ -894,7 +897,7 @@ class MultiRzeszow:
 
                 active_date = datetime.strptime(row["date"], "%Y%m%d").date()
 
-                if self.arch_feed["start"] <= active_date <= self.arch_feed["end"]:
+                if self.arch_feed.start <= active_date <= self.arch_feed.end:
                     self.arch_services.add(row["service_id"])
 
                     writer.writerow({
@@ -1031,12 +1034,12 @@ class MultiRzeszow:
         # Read feeds
         for feed in self.files_xml:
 
-            print("\033[1A\033[K" + "Merging version {}".format(feed["ver"]))
+            print("\033[1A\033[K" f"Merging version {feed.ver}")
 
-            feed_gtfs = os.path.join("feeds", feed["ver"] + ".zip")
+            feed_gtfs = os.path.join("feeds", feed.ver + ".zip")
 
             self.arch = zipfile.ZipFile(feed_gtfs, mode="r")
-            self.arch_v = feed["ver"]
+            self.arch_v = feed.ver
             self.arch_feed = feed
             self.arch_services = set()
             self.arch_shapes = set()
@@ -1118,9 +1121,9 @@ if __name__ == "__main__":
     argprs = argparse.ArgumentParser()
 
     argprs.add_argument(
-        "--single-file", "-s", action="store", metavar="FILENAME_ON_WEBDAV",
+        "--single-file", "-s", action="store", metavar="FILENAME_ON_RZESZOW_OPENDATA",
         help="parse only one file by the provided name. "
-             "this file has to exist on ZTM Rzeszów WebDAV"
+             "this file has to exist on otwartedane.erzeszow.pl"
     )
 
     argprs.add_argument(
@@ -1164,7 +1167,7 @@ if __name__ == "__main__":
 
     elif args.single_file:
         print()
-        RzeszowGtfs.parse(args.single_file, pub_name=args.publisher_name,
+        RzeszowGtfs.parse(file_name=args.single_file, pub_name=args.publisher_name,
                           pub_url=args.publisher_url)
 
     elif args.merge:
