@@ -197,6 +197,7 @@ class RzeszowGtfs:
         self.route_ids = {}
         self.route_dirs = {}
         self.sections = {}
+        self.used_routes = set()
 
         self.shape_headsigns = {}
         self.shape_direction = {}
@@ -556,6 +557,9 @@ class RzeszowGtfs:
                                 direction, headsign])
             wrtr_times.writerows(times)
 
+            # Save used route_id
+            self.used_routes.add(route_id)
+
         print("\033[1A\033[K" "Parsing trips (txc:VehicleJourneys) - done")
 
         file_trips.close()
@@ -586,6 +590,28 @@ class RzeszowGtfs:
                     wrtr.writerow([date, service_id, "1"])
 
         file.close()
+
+    def remove_unused_routes(self):
+        print("\033[1A\033[K" "Removing unused routes")
+        os.rename("gtfs/routes.txt", "gtfs/routes.txt.old")
+        with open("gtfs/routes.txt.old", mode="r", encoding="utf-8", newline="") as in_buff, \
+                open("gtfs/routes.txt", mode="w", encoding="utf-8", newline="") as out_file:
+
+            # Wrap csv readers writers around file buffers
+            in_csv = csv.reader(in_buff)
+            out_csv = csv.writer(out_file)
+
+            # Re-write header
+            header = next(in_csv)
+            out_csv.writerow(header)
+
+            # Get route_id column index
+            route_id_idx = header.index("route_id")
+
+            # Rewrite rows with route_id in self.used_routes
+            for row in in_csv:
+                if row[route_id_idx] in self.used_routes:
+                    out_csv.writerow(row)
 
     def close(self):
         """Close the underlaying temporary file"""
@@ -672,6 +698,8 @@ class RzeszowGtfs:
 
                 else:
                     raise RuntimeError(f"Unable to handle XML section {look_for_tag!r}")
+
+        self.remove_unused_routes()
 
         print("\033[1A\033[K" "Creating agency & feed_info files")
         self.static_files(pub_name, pub_url, self.version, self.download_time)
