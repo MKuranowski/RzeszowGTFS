@@ -743,13 +743,13 @@ class MultiRzeszow:
                 continue
 
             # File version
-            version_match = re.match(r"(\d?\d)\.(\d?\d)\.(\d{4})", res["description"])
+            version_match = re.search(r"(\d?\d)\.(\d?\d)\.(\d{4})", res["description"])
             if not version_match:
                 raise ValueError("One of TeansXChange resources doesn't contain version in the "
                                  f"description: {res['description']!r}")
             file_version = version_match[3] \
-                + "-" + version_match[2].ljust(2, "0") \
-                + "-" + version_match[1].ljust(2, "0")
+                + "-" + version_match[2].rjust(2, "0") \
+                + "-" + version_match[1].rjust(2, "0")
 
             # File modification time
             file_mtime = datetime.strptime(
@@ -758,7 +758,7 @@ class MultiRzeszow:
             )
 
             self.files_xml.append(_XmlFile(
-                url=resources["file"],
+                url=res["file"],
                 ver=file_version,
                 mtime=file_mtime,
             ))
@@ -842,6 +842,7 @@ class MultiRzeszow:
 
                 RzeszowGtfs.parse(
                     file_url=file.url,
+                    file_version=file.ver,
                     target=os.path.join("feeds", version+".zip"),
                 )
 
