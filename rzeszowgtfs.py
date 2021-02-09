@@ -592,7 +592,7 @@ class RzeszowGtfs:
         self.temp_file.close()
 
     @staticmethod
-    def compress(target="rzeszow.txt"):
+    def compress(target="rzeszow.zip"):
         "Compress all created files to `target`"
         archive = zipfile.ZipFile(target, mode="w", compression=zipfile.ZIP_DEFLATED)
         for file in os.listdir("gtfs"):
