@@ -236,7 +236,7 @@ class RzeszowGtfs:
                    "is_data_source,attribution_url\n")
 
         file.write(f'"Data provided by: ZTM Rzeszów (retrieved {dload_timestring})",0,1,1,1,'
-                   '"https://chmura.ztm.rzeszow.pl/index.php/s/UY5an6Qk8CZHmCf"')
+                   '"https://otwartedane.erzeszow.pl/dataset/rozklad-jazdy-transxchange"')
 
         file.close()
 
