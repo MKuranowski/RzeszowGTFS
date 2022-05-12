@@ -753,7 +753,7 @@ class MultiRzeszow:
 
             # File modification time
             file_mtime = datetime.strptime(
-                res["name"].casefold(),
+                res["name"].casefold().partition(" ")[0],
                 "TransXChange%Y%m%d%H%M%S"
             )
 
