@@ -1,8 +1,4 @@
-feeds/
-gtfs/
-tmp/
-*.sh
-*.bat
-*.xml
+.venv
+_impuls_workspace
+*.pyc
 *.zip
-*.html
