@@ -120,10 +120,6 @@ class RzeszowGTFS(impuls.App):
                         "WHERE name LIKE '% nż'"
                     ),
                 ),
-                impuls.tasks.ExecuteSQL(
-                    task_name="ClearBlockId",
-                    statement="UPDATE trips SET block_id = NULL",
-                ),
                 impuls.tasks.GenerateTripHeadsign(),
                 impuls.tasks.ExecuteSQL(
                     task_name="RemoveStopIndicatorFromHeadsign",
@@ -192,6 +188,7 @@ class RzeszowGTFS(impuls.App):
                             "service_id",
                             "trip_headsign",
                             "direction_id",
+                            "block_id",
                             "shape_id",
                         ),
                         "shapes": ("shape_id", "shape_pt_sequence", "shape_pt_lat", "shape_pt_lon"),
