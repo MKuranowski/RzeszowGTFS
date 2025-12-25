@@ -1,4 +1,4 @@
-# Copyright 2020, 2024 Mikołaj Kuranowski
+# Copyright 2020, 2024-2025 Mikołaj Kuranowski
 # SPDX-License-Identifier: MIT
 
 import re
@@ -120,10 +120,6 @@ class RzeszowGTFS(impuls.App):
                         "WHERE name LIKE '% nż'"
                     ),
                 ),
-                impuls.tasks.ExecuteSQL(
-                    task_name="ClearBlockId",
-                    statement="UPDATE trips SET block_id = NULL",
-                ),
                 impuls.tasks.GenerateTripHeadsign(),
                 impuls.tasks.ExecuteSQL(
                     task_name="RemoveStopIndicatorFromHeadsign",
@@ -162,7 +158,7 @@ class RzeszowGTFS(impuls.App):
                 ),
                 impuls.tasks.SaveGTFS(
                     headers={
-                        "agency": (
+                        "agency.txt": (
                             "agency_id",
                             "agency_name",
                             "agency_url",
@@ -170,7 +166,7 @@ class RzeszowGTFS(impuls.App):
                             "agency_lang",
                             "agency_phone",
                         ),
-                        "routes": (
+                        "routes.txt": (
                             "agency_id",
                             "route_id",
                             "route_short_name",
@@ -179,23 +175,24 @@ class RzeszowGTFS(impuls.App):
                             "route_color",
                             "route_text_color",
                         ),
-                        "stops": (
+                        "stops.txt": (
                             "stop_id",
                             "stop_name",
                             "stop_lat",
                             "stop_lon",
                         ),
-                        "calendar_dates": ("date", "service_id", "exception_type"),
-                        "trips": (
+                        "calendar_dates.txt": ("date", "service_id", "exception_type"),
+                        "trips.txt": (
                             "trip_id",
                             "route_id",
                             "service_id",
                             "trip_headsign",
                             "direction_id",
+                            "block_id",
                             "shape_id",
                         ),
-                        "shapes": ("shape_id", "shape_pt_sequence", "shape_pt_lat", "shape_pt_lon"),
-                        "stop_times": (
+                        "shapes.txt": ("shape_id", "shape_pt_sequence", "shape_pt_lat", "shape_pt_lon"),
+                        "stop_times.txt": (
                             "trip_id",
                             "stop_sequence",
                             "stop_id",
@@ -204,13 +201,13 @@ class RzeszowGTFS(impuls.App):
                             "pickup_type",
                             "drop_off_type",
                         ),
-                        "feed_info": (
+                        "feed_info.txt": (
                             "feed_publisher_name",
                             "feed_publisher_url",
                             "feed_lang",
                             "feed_version",
                         ),
-                        "attributions": (
+                        "attributions.txt": (
                             "attribution_id",
                             "organization_name",
                             "is_producer",
